@@ -1,0 +1,42 @@
+#updated db storage
+
+
+
+from pymongo import MongoClient
+from pymongo.errors import PyMongoError
+
+def store_tweets(tweets, db_url="mongodb://localhost:27017/"):
+    """
+    Store multiple tweets in a MongoDB database.
+    
+    Args:
+    tweets (list): A list of dictionaries containing tweet data.
+    db_url (str): The URL of the MongoDB database. Defaults to local MongoDB instance.
+    
+    Returns:
+    list: A list of ObjectIds of the inserted documents as strings.
+    """
+    client = MongoClient(db_url)
+    db = client.tweet_database
+    collection = db.tweets
+    
+    inserted_ids = []
+    
+    try:
+        result = collection.insert_many(tweets)
+        inserted_ids = [str(id) for id in result.inserted_ids]
+    except PyMongoError as e:
+        print(f"Error storing tweets in database: {str(e)}")
+    finally:
+        client.close()
+    
+    return inserted_ids
+
+# Example usage
+if __name__ == "__main__":
+    sample_tweets = [
+        {"text": "Sample tweet 1", "author": "user1", "url": "https://twitter.com/user1/status/1"},
+        {"text": "Sample tweet 2", "author": "user2", "url": "https://twitter.com/user2/status/2"},
+    ]
+    inserted_ids = store_tweets(sample_tweets)
+    print(f"Stored {len(inserted_ids)} tweets in database with IDs: {inserted_ids}")
