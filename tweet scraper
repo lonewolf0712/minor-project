@@ -1,0 +1,90 @@
+#tweet scraper
+
+
+import requests
+from bs4 import BeautifulSoup
+import re
+from concurrent.futures import ThreadPoolExecutor, as_completed
+import time
+
+def scrape_tweet(url, retries=3, delay=2):
+    """
+    Scrape content from a Twitter URL with improved error handling and retries.
+    
+    Args:
+    url (str): The URL of the tweet to scrape.
+    retries (int): Number of retry attempts.
+    delay (int): Delay between retries in seconds.
+    
+    Returns:
+    dict: A dictionary containing the scraped tweet data, or None if scraping failed.
+    """
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.3'
+    }
+    
+    for attempt in range(retries):
+        try:
+            response = requests.get(url, headers=headers)
+            response.raise_for_status()
+            
+            soup = BeautifulSoup(response.text, 'html.parser')
+            
+            # More flexible selectors
+            tweet_text_elem = soup.select_one('div[data-testid="tweetText"]')
+            author_elem = soup.select_one('div[data-testid="User-Name"] a')
+            date_elem = soup.select_one('time')
+            stats_elems = soup.select('span[data-testid="like"], span[data-testid="retweet"]')
+            
+            if not all([tweet_text_elem, author_elem, date_elem, len(stats_elems) >= 2]):
+                raise ValueError("Could not find all required elements")
+            
+            tweet_data = {
+                'text': tweet_text_elem.text.strip(),
+                'author': author_elem.text.strip(),
+                'date': date_elem['datetime'] if date_elem else '',
+                'likes': stats_elems[0].text.strip() if len(stats_elems) > 0 else '0',
+                'retweets': stats_elems[1].text.strip() if len(stats_elems) > 1 else '0',
+                'url': url
+            }
+            
+            return tweet_data
+            
+        except Exception as e:
+            print(f"Error scraping tweet {url} (Attempt {attempt + 1}/{retries}): {str(e)}")
+            if attempt < retries - 1:
+                time.sleep(delay)
+            else:
+                return None
+
+def scrape_multiple_tweets(urls, max_workers=5):
+    """
+    Scrape multiple tweets concurrently.
+    
+    Args:
+    urls (list): A list of tweet URLs to scrape.
+    max_workers (int): Maximum number of threads to use for concurrent scraping.
+    
+    Returns:
+    list: A list of dictionaries containing the scraped tweet data.
+    """
+    tweets = []
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        future_to_url = {executor.submit(scrape_tweet, url): url for url in urls}
+        for future in as_completed(future_to_url):
+            tweet_data = future.result()
+            if tweet_data:
+                tweets.append(tweet_data)
+    return tweets
+
+# Example usage
+if __name__ == "__main__":
+    tweet_urls = [
+        "https://twitter.com/Cristiano/status/1847002524395417915",
+        "https://twitter.com/example2/status/0987654321",
+        "https://twitter.com/example3/status/1122334455"
+    ]
+    scraped_tweets = scrape_multiple_tweets(tweet_urls)
+    print(f"Scraped {len(scraped_tweets)} tweets")
+    for tweet in scraped_tweets:
+        print(tweet)
