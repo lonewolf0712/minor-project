@@ -1,0 +1,36 @@
+#main tweet processing script
+
+from twitter_scraper import scrape_multiple_tweets
+from tweet_db_storage import store_tweets
+
+def process_tweets(urls, db_url="mongodb://localhost:27017/", max_workers=5):
+    """
+    Process multiple tweets: scrape and store in the database.
+    
+    Args:
+    urls (list): A list of URLs of the tweets to process.
+    db_url (str): The URL of the MongoDB database. Defaults to local MongoDB instance.
+    max_workers (int): Maximum number of threads to use for concurrent scraping.
+    
+    Returns:
+    list: A list of ObjectIds of the inserted documents as strings.
+    """
+    # Scrape tweets
+    scraped_tweets = scrape_multiple_tweets(urls, max_workers)
+    print(f"Scraped {len(scraped_tweets)} tweets")
+    
+    # Store tweets in database
+    inserted_ids = store_tweets(scraped_tweets, db_url)
+    print(f"Stored {len(inserted_ids)} tweets in database")
+    
+    return inserted_ids
+
+# Example usage
+if __name__ == "__main__":
+    tweet_urls = [
+        "https://twitter.com/example1/status/1234567890",
+        "https://twitter.com/example2/status/0987654321",
+        "https://twitter.com/example3/status/1122334455"
+    ]
+    processed_ids = process_tweets(tweet_urls)
+    print(f"Processed tweet IDs: {processed_ids}")
