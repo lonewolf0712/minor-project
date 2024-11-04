@@ -1,0 +1,229 @@
+import os
+from selenium import webdriver
+from selenium.webdriver.common.by import By
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
+from selenium.common.exceptions import TimeoutException, NoSuchElementException
+from datetime import datetime, timedelta
+import json
+import time
+import undetected_chromedriver as uc
+import ssl
+import certifi
+import urllib.request
+
+class TwitterScraper:
+    def __init__(self):
+        """Initialize the scraper with undetected-chromedriver and SSL fixes"""
+        # Fix SSL certificate issues
+        ssl_context = ssl.create_default_context(cafile=certifi.where())
+        urllib.request.urlopen = lambda url, context=None: urllib.request.urlopen(url, context=ssl_context)
+        
+        # Configure Chrome options
+        options = uc.ChromeOptions()
+        options.add_argument('--no-sandbox')
+        options.add_argument('--disable-dev-shm-usage')
+        options.add_argument('--disable-blink-features=AutomationControlled')
+        options.add_argument('--disable-notifications')
+        options.add_argument('--ignore-certificate-errors')
+        options.add_argument('--ignore-ssl-errors')
+        
+        # Initialize the driver with SSL verification disabled
+        try:
+            self.driver = uc.Chrome(
+                options=options,
+                ssl_verification=False
+            )
+            self.wait = WebDriverWait(self.driver, 20)
+        except Exception as e:
+            print(f"Failed to initialize driver: {e}")
+            raise
+
+    def login(self, email, password):
+        """Login to Twitter"""
+        try:
+            self.driver.get('https://twitter.com/login')
+            time.sleep(5)
+            
+            # Enter email
+            email_field = self.wait.until(EC.presence_of_element_located((By.NAME, "text")))
+            email_field.send_keys(email)
+            self.driver.find_element(By.XPATH, "//span[text()='Next']").click()
+            time.sleep(2)
+            
+            # Enter password
+            password_field = self.wait.until(EC.presence_of_element_located((By.NAME, "password")))
+            password_field.send_keys(password)
+            self.driver.find_element(By.XPATH, "//span[text()='Log in']").click()
+            time.sleep(5)
+            
+            return True
+        except Exception as e:
+            print(f"Login failed: {str(e)}")
+            return False
+
+    def parse_number(self, text):
+        """Convert Twitter number format to integer"""
+        if not text or text.strip() == '':
+            return 0
+            
+        text = text.lower().strip()
+        try:
+            if 'k' in text:
+                return int(float(text.replace('k', '')) * 1000)
+            elif 'm' in text:
+                return int(float(text.replace('m', '')) * 1000000)
+            return int(float(text.replace(',', '')))
+        except:
+            return 0
+
+    def get_tweet_metrics(self, tweet):
+        """Extract metrics from a tweet element"""
+        metrics = {
+            'replies': 0,
+            'retweets': 0,
+            'likes': 0,
+            'views': 0
+        }
+        
+        try:
+            stats = tweet.find_elements(By.CSS_SELECTOR, '[role="group"] [role="link"]')
+            for stat in stats:
+                try:
+                    aria_label = stat.get_attribute('aria-label')
+                    if aria_label:
+                        if 'repl' in aria_label.lower():
+                            metrics['replies'] = self.parse_number(aria_label.split()[0])
+                        elif 'repost' in aria_label.lower() or 'retweet' in aria_label.lower():
+                            metrics['retweets'] = self.parse_number(aria_label.split()[0])
+                        elif 'like' in aria_label.lower():
+                            metrics['likes'] = self.parse_number(aria_label.split()[0])
+                        elif 'view' in aria_label.lower():
+                            metrics['views'] = self.parse_number(aria_label.split()[0])
+                except:
+                    continue
+        except:
+            pass
+            
+        return metrics
+
+    def get_user_tweets(self, username):
+        """Scrape tweets from a user's timeline"""
+        self.driver.get(f'https://twitter.com/{username}')
+        time.sleep(5)  # Wait for page load
+        
+        posts = []
+        last_height = self.driver.execute_script("return document.documentElement.scrollHeight")
+        scroll_count = 0
+        max_scrolls = 10
+        
+        while scroll_count < max_scrolls and len(posts) < 20:
+            try:
+                tweets = self.wait.until(EC.presence_of_all_elements_located(
+                    (By.CSS_SELECTOR, '[data-testid="tweet"]')
+                ))
+                
+                for tweet in tweets:
+                    try:
+                        try:
+                            text_element = tweet.find_element(By.CSS_SELECTOR, '[data-testid="tweetText"]')
+                            text = text_element.text
+                        except NoSuchElementException:
+                            text = tweet.text.split('\n')[0]
+                        
+                        time_element = tweet.find_element(By.TAG_NAME, "time")
+                        tweet_time = time_element.get_attribute("datetime")
+                        if tweet_time:
+                            tweet_time = datetime.fromisoformat(tweet_time.replace('Z', '+00:00'))
+                            tweet_time = tweet_time.strftime("%m/%d/%YT%H:%M:%SZ")
+                        
+                        metrics = self.get_tweet_metrics(tweet)
+                        
+                        post = {
+                            "post_desc": text,
+                            "likes": metrics['likes'],
+                            "retweets": metrics['retweets'],
+                            "replies": metrics['replies'],
+                            "views": metrics['views'],
+                            "time": tweet_time
+                        }
+                        
+                        if post not in posts:
+                            posts.append(post)
+                            
+                    except Exception as e:
+                        print(f"Error processing tweet: {str(e)}")
+                        continue
+                
+                self.driver.execute_script(
+                    "window.scrollTo(0, document.documentElement.scrollHeight);"
+                )
+                time.sleep(3)
+                
+                new_height = self.driver.execute_script("return document.documentElement.scrollHeight")
+                if new_height == last_height:
+                    break
+                    
+                last_height = new_height
+                scroll_count += 1
+                
+            except Exception as e:
+                print(f"Error during scrolling: {str(e)}")
+                break
+        
+        seven_days_ago = datetime.now() - timedelta(days=7)
+        filtered_posts = [
+            post for post in posts
+            if datetime.strptime(post['time'], "%m/%d/%YT%H:%M:%SZ") > seven_days_ago
+        ]
+        
+        return {
+            "username": username,
+            "postIn7days": filtered_posts[:7]
+        }
+
+    def close(self):
+        """Close the browser"""
+        self.driver.quit()
+
+def scrape_multiple_users(usernames, twitter_email, twitter_password):
+    """Scrape data for multiple Twitter users"""
+    try:
+        scraper = TwitterScraper()
+        results = []
+        
+        if scraper.login(twitter_email, twitter_password):
+            for username in usernames:
+                try:
+                    print(f"Scraping data for {username}...")
+                    user_data = scraper.get_user_tweets(username)
+                    results.append(user_data)
+                    time.sleep(3)
+                except Exception as e:
+                    print(f"Error scraping data for {username}: {str(e)}")
+                    continue
+        
+        scraper.close()
+        return results
+    except Exception as e:
+        print(f"Fatal error in scraping: {e}")
+        return []
+
+if __name__ == "__main__":
+    # Apply SSL workaround if needed
+    ssl._create_default_https_context = ssl._create_unverified_context
+    
+    TWITTER_EMAIL = "mansimarsinghduggal@gmail.com"
+    TWITTER_PASSWORD = "Netflix2K20$"
+    
+    usernames = ["Cristiano", "theMadridZone"]
+    results = scrape_multiple_users(usernames, TWITTER_EMAIL, TWITTER_PASSWORD)
+    
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    filename = f'twitter_data_{timestamp}.json'
+    
+    with open(filename, 'w', encoding='utf-8') as f:
+        json.dump(results, f, ensure_ascii=False, indent=4)
+    
+    print(f"Data saved to {filename}")
+    print(f"Data saved at: {os.getcwd()}")
