@@ -1,0 +1,206 @@
+from socialScore import SocialScoreCalculator
+from typing import Dict, Union
+from dataclasses import dataclass
+import pandas as pd
+import matplotlib.pyplot as plt
+
+@dataclass
+class EngagementMetrics:
+    engagement_rate: float
+    interaction_quality: float
+    growth_rate: float
+
+@dataclass
+class ContentQuality:
+    frequency: float
+    originality: float
+    diversity: float
+
+@dataclass
+class Trustworthiness:
+    trust_score: float
+    verified_followers: float
+    reputation_index: float
+
+@dataclass
+class SocialImpact:
+    network_influence: float
+    trend_setting: float
+    mentions_reposts: float
+
+@dataclass
+class MonetizationPotential:
+    token_transactions: float
+    crowdfunding: float
+    endorsement_success: float
+
+@dataclass
+class GovernanceParticipation:
+    voting_activity: float
+    proposal_contribution: float
+
+def get_float_input(prompt: str, min_val: float = 0.0, max_val: float = 1.0) -> float:
+    """Helper function to get validated float input from user."""
+    while True:
+        try:
+            value = float(input(prompt))
+            if min_val <= value <= max_val:
+                return value
+            print(f"Please enter a value between {min_val} and {max_val}")
+        except ValueError:
+            print("Please enter a valid number")
+
+def input_user_data() -> dict:
+    """Get user data through interactive prompts."""
+    print("\n=== User Data Input ===")
+    print("Please enter values between 0 and 1 for each metric (1 being the highest)")
+    
+    print("\n--- Engagement Metrics ---")
+    engagement = EngagementMetrics(
+        engagement_rate=get_float_input("Enter engagement rate: "),
+        interaction_quality=get_float_input("Enter interaction quality: "),
+        growth_rate=get_float_input("Enter growth rate: ")
+    )
+    
+    print("\n--- Content Quality ---")
+    content = ContentQuality(
+        frequency=get_float_input("Enter content frequency: "),
+        originality=get_float_input("Enter content originality: "),
+        diversity=get_float_input("Enter content diversity: ")
+    )
+    
+    print("\n--- Trustworthiness ---")
+    trust = Trustworthiness(
+        trust_score=get_float_input("Enter trust score: "),
+        verified_followers=get_float_input("Enter verified followers ratio: "),
+        reputation_index=get_float_input("Enter reputation index: ")
+    )
+    
+    print("\n--- Social Impact ---")
+    impact = SocialImpact(
+        network_influence=get_float_input("Enter network influence: "),
+        trend_setting=get_float_input("Enter trend setting ability: "),
+        mentions_reposts=get_float_input("Enter mentions/reposts rate: ")
+    )
+    
+    print("\n--- Monetization Potential ---")
+    monetization = MonetizationPotential(
+        token_transactions=get_float_input("Enter token transactions rate: "),
+        crowdfunding=get_float_input("Enter crowdfunding success: "),
+        endorsement_success=get_float_input("Enter endorsement success rate: ")
+    )
+    
+    print("\n--- Governance Participation ---")
+    governance = GovernanceParticipation(
+        voting_activity=get_float_input("Enter voting activity: "),
+        proposal_contribution=get_float_input("Enter proposal contribution: ")
+    )
+    
+    return {
+        'engagement': engagement,
+        'content': content,
+        'trust': trust,
+        'impact': impact,
+        'monetization': monetization,
+        'governance': governance
+    }
+
+def visualize_score_breakdown(score_data: Dict) -> None:
+    """Create a visualization of the score breakdown."""
+    plt.style.use('classic')
+    
+    # Create figure
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(15, 6))
+    fig.patch.set_facecolor('#f0f0f0')
+    
+    # Extract component scores
+    component_scores = {k: v for k, v in score_data.items() 
+                       if k.endswith('_score') and k != 'social_score'}
+    
+    # Plot 1: Pie chart of weighted contributions
+    ax1.set_facecolor('white')
+    weights = {
+        'engagement': 0.3,
+        'content': 0.2,
+        'trust': 0.2,
+        'impact': 0.15,
+        'monetization': 0.1,
+        'governance': 0.05
+    }
+    
+    weighted_scores = {k: component_scores[f"{k}_score"] * weights[k] 
+                      for k in weights.keys()}
+    
+    patches, texts, autotexts = ax1.pie(weighted_scores.values(), 
+                                       labels=weighted_scores.keys(),
+                                       autopct='%1.1f%%',
+                                       colors=['skyblue', 'lightgreen', 'lightcoral', 
+                                              'wheat', 'plum', 'paleturquoise'])
+    ax1.set_title('Weighted Score Contributions')
+    
+    # Plot 2: Bar chart of raw component scores
+    ax2.set_facecolor('white')
+    bars = ax2.bar(range(len(component_scores)), component_scores.values(),
+                   color='lightseagreen', alpha=0.7)
+    
+    # Add value labels on bars
+    for bar in bars:
+        height = bar.get_height()
+        ax2.text(bar.get_x() + bar.get_width()/2., height,
+                f'{height:.2f}',
+                ha='center', va='bottom')
+    
+    ax2.set_xticks(range(len(component_scores)))
+    ax2.set_xticklabels([k.split('_')[0] for k in component_scores.keys()],
+                        rotation=45)
+    ax2.set_title('Component Scores')
+    ax2.set_ylabel('Score')
+    ax2.grid(True, linestyle='--', alpha=0.7)
+    
+    plt.tight_layout()
+    plt.show()
+
+def main():
+    print("Welcome to the Social Score Calculator!")
+    print("This tool will help you calculate your social score based on various metrics.")
+    
+    # Get user input
+    user_data = input_user_data()
+    
+    # Calculate social score
+    calculator = SocialScoreCalculator()
+    score_data = calculator.calculate_social_score(
+        user_data['engagement'],
+        user_data['content'],
+        user_data['trust'],
+        user_data['impact'],
+        user_data['monetization'],
+        user_data['governance']
+    )
+    
+    # Display results
+    print("\n=== Results ===")
+    print("-" * 50)
+    print(f"Overall Social Score: {score_data['social_score']:.2f}")
+    print(f"Tier: {score_data['tier']}")
+    print("\nComponent Scores:")
+    for key, value in score_data.items():
+        if key.endswith('_score') and key != 'social_score':
+            print(f"{key}: {value:.2f}")
+    
+    # Visualize results
+    visualize_score_breakdown(score_data)
+    
+    # Ask if user wants to save results
+    if input("\nWould you like to save these results to a CSV file? (y/n): ").lower() == 'y':
+        filename = input("Enter filename (default: social_score_result.csv): ").strip() or "social_score_result.csv"
+        pd.DataFrame([score_data]).to_csv(filename, index=False)
+        print(f"Results saved to {filename}")
+
+if __name__ == "__main__":
+    try:
+        main()
+    except KeyboardInterrupt:
+        print("\nProgram terminated by user.")
+    except Exception as e:
+        print(f"\nAn error occurred: {str(e)}")
